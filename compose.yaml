@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    image: decision-wheel:local
+    ports:
+      - "0.0.0.0:3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_PATH: /data/decisions.db
+      DUE_AFTER_DAYS: 21
+      ADVERTISE_HOST: ${ADVERTISE_HOST:-}
+    volumes:
+      - decision-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  decision-data:

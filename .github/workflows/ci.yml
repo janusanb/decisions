@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run licenses
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          CI: true
+      - uses: docker/setup-buildx-action@v3
+      - run: docker build -t decision-wheel:ci .
+
+  docker-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+      - run: docker compose up -d
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - name: Persist data across recreate
+        run: |
+          curl -fsS -H 'X-Participant-Id: a' -H 'Content-Type: application/json' \
+            -d '{"name":"Persistence Cafe"}' \
+            http://127.0.0.1:3000/api/restaurants
+          docker compose up -d --force-recreate
+          sleep 5
+          curl -fsS -H 'X-Participant-Id: a' http://127.0.0.1:3000/api/state \
+            | grep -q "Persistence Cafe"
+      - if: always()
+        run: docker compose down -v
